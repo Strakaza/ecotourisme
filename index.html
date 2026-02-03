@@ -3,15 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Carte Interactive - Zone 9 & Tourisme Handicap 21</title>
+    <title>Carte Zone 9 - Ecotourisme</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-        #map { width: 100%; height: 100vh; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; overflow: hidden; }
+        #map { width: 100%; height: 100vh; background: #f8f9fa; }
         
-        /* Style du titre sur la carte */
         .map-title {
             position: absolute;
             top: 10px;
@@ -21,6 +20,7 @@
             padding: 10px;
             border-radius: 5px;
             border: 1px solid #ccc;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
     </style>
 </head>
@@ -36,85 +36,64 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // 1. Initialisation de la carte
-        var map = L.map('map', { zoomSnap: 0.5 });
+        // 1. Initialisation de la carte avec restrictions
+        // minZoom: empêche de dézoomer trop loin
+        var map = L.map('map', { 
+            zoomSnap: 0.1,
+            minZoom: 10 
+        });
 
-        // Fond de carte OpenStreetMap
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
-        // 2. Définition de votre Zone 9 (le polygone)
-        const zone9GeoJSON = {
-            "type": "Feature",
-            "properties": { "name": "Zone 9" },
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [[
-                    [5.034974152665313, 46.94862722827409],
-                    [5.142882021653975, 46.946050380255],
-                    [5.259989328472784, 46.96895764481198],
-                    [5.303292656985008, 47.06376820659591],
-                    [5.466044848472421, 47.17123814610886],
-                    [5.280158903101807, 47.31127490844739],
-                    [5.197902526770633, 47.25833140984713],
-                    [5.133728159713144, 47.20023036054482],
-                    [5.137838799729906, 47.08999290992156],
-                    [5.050662798397127, 47.0025509002632],
-                    [5.034974152665313, 46.94862722827409]
-                ]]
-            }
-        };
-
-        // Style de la zone
-        var zoneLayer = L.geoJSON(zone9GeoJSON, {
-            style: {
-                color: "#2c3e50",
-                weight: 4,
-                fillColor: "#3498db",
-                fillOpacity: 0.2,
-                dashArray: "5, 10" // Ligne pointillée pour le contour
-            }
-        }).addTo(map);
-
-        // Ajuster la vue sur la Zone 9 immédiatement
-        var bounds = zoneLayer.getBounds();
-        map.fitBounds(bounds, { padding: [30, 30] });
-        
-        // Optionnel : Restreindre la navigation pour rester dans le secteur
-        map.setMaxBounds(bounds.pad(1)); 
-
-        // 3. Chargement du fichier externe "Tourisme et Handicap"
-        // REMPLACEZ le nom du fichier ci-dessous si nécessaire
-        const geojsonFile = 'liste-des-etablissements-labellises-tourisme-et-handicap.geojson';
-
-        fetch(geojsonFile)
+        // 2. Chargement de votre fichier GeoJSON exporté de QGIS
+        fetch('ecotourisme.geojson')
             .then(response => {
-                if (!response.ok) throw new Error("Fichier GeoJSON introuvable");
+                if (!response.ok) throw new Error("Fichier ecotourisme.geojson introuvable");
                 return response.json();
             })
             .then(data => {
-                L.geoJSON(data, {
-                    // FILTRE : On ne garde que les données du département 21
-                    filter: function(feature) {
-                        // On vérifie le code département (souvent stocké dans 'code_departement' ou 'departement')
-                        // Si le fichier utilise le code postal, on peut faire : feature.properties.code_postal.startsWith('21')
-                        return feature.properties.code_departement === "21" || feature.properties.departement === "21";
-                    },
+                var zoneLayer = L.geoJSON(data, {
+                    style: {
+                        color: "#2c3e50", // Contour sombre
+                        weight: 2,
+                        fillColor: "#27ae60", // Vert pour l'aspect "éco"
+                        fillOpacity: 0.3
+                    }
+                }).addTo(map);
 
-                    // Création des marqueurs (petits cercles oranges)
+                // Ajustement de la vue et verrouillage
+                const bounds = zoneLayer.getBounds();
+                map.fitBounds(bounds, { padding: [20, 20] });
+                
+                // --- LOCK : EMPECHER DE DEZOMMER PLUS BAS QUE LA ZONE ---
+                map.setMinZoom(map.getBoundsZoom(bounds)); 
+                // Bloque la carte sur cette emprise pour éviter de se perdre en Bourgogne
+                map.setMaxBounds(bounds.pad(0.5)); 
+            })
+            .catch(err => console.error("Erreur zone:", err));
+
+        // 3. Chargement des points (Tourisme et Handicap)
+        const geojsonFile = 'liste-des-etablissements-labellises-tourisme-et-handicap.geojson';
+
+        fetch(geojsonFile)
+            .then(response => response.json())
+            .then(data => {
+                L.geoJSON(data, {
+                    filter: function(feature) {
+                        return feature.properties.code_departement === "21" || 
+                               (feature.properties.code_postal && feature.properties.code_postal.startsWith('21'));
+                    },
                     pointToLayer: function(feature, latlng) {
                         return L.circleMarker(latlng, {
                             radius: 7,
                             fillColor: "#e67e22",
                             color: "#fff",
                             weight: 1,
-                            opacity: 1,
                             fillOpacity: 0.9
                         });
                     },
-
-                    // Popups avec informations
                     onEachFeature: function(feature, layer) {
                         let props = feature.properties;
                         let contenu = `
@@ -122,24 +101,13 @@
                                 <strong>${props.nom_etablissement || "Établissement"}</strong><br>
                                 <i>${props.ville || ""}</i><br><br>
                                 <b>Labels :</b> ${props.labels_tourisme_handicap || "Non spécifié"}<br>
-                                <a href="https://www.google.com/maps/search/?api=1&query=${latlngToQuery(layer)}" target="_blank">Y aller (Google Maps)</a>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${layer.getLatLng().lat},${layer.getLatLng().lng}" target="_blank">Y aller (Google Maps)</a>
                             </div>
                         `;
                         layer.bindPopup(contenu);
                     }
                 }).addTo(map);
-            })
-            .catch(err => {
-                console.error("Erreur:", err);
-                alert("Erreur de chargement des données. Vérifiez que vous utilisez un serveur local (http://) et non le protocole file://");
             });
-
-        // Fonction utilitaire pour le lien Google Maps dans la popup
-        function latlngToQuery(layer) {
-            let loc = layer.getLatLng();
-            return loc.lat + "," + loc.lng;
-        }
-
     </script>
 </body>
 </html>
